@@ -55,6 +55,5 @@ MIT License — Free for personal and commercial use.
 
 <img src="https://xord.io/intelligence/MetaPurge_Interface_Example.jpg" width="75%">
 
-For fun:
 <img src="https://xord.io/intelligence/MetaPurge_Cartoon.jpg" width="75%">
 
