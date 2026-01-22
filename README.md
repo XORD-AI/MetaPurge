@@ -2,7 +2,7 @@
 
 XORD DEFENSE | Metadata Sanitizer for Windows 10/11
 
-Metadata Sanitizer for Windows 10/11 — strips EXIF, PDF metadata, and file timestamps from your documents.
+Every photo you share, every PDF you send — they carry hidden data. GPS coordinates. Device fingerprints. Timestamps. Corporations harvest this to map your life, track your movements, and build profiles they sell to the highest bidder. MetaPurge strips it all. Metadata Sanitizer for Windows 10/11 — strips EXIF, PDF metadata, and file timestamps from your documents.
 "Your files are talking behind your back. MetaPurge shuts them up."
 
 🔽 **[DOWNLOAD (ZIP)](https://github.com/XORD-AI/MetaPurge/releases/download/XORD_Meta_Laundry/MetaPurge.zip)**
