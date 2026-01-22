@@ -1,5 +1,7 @@
 import os
 import sys
+import time
+import winsound
 import tkinter as tk
 from tkinter import messagebox
 from tkinterdnd2 import DND_FILES, TkinterDnD
@@ -22,23 +24,28 @@ COLOR_GOLD = "#FFD700"      # XORD Gold
 COLOR_TEXT = "#ffffff"      # White text
 COLOR_SUBTEXT = "#888888"   # Grey subtext
 
-def change_file_creation_time(path, date_obj):
-    """Forces the Windows 'Date Created' timestamp to 1990."""
-    try:
-        wintime = pywintypes.Time(date_obj)
-        winfile = win32file.CreateFile(
-            path, win32file.GENERIC_WRITE,
-            win32file.FILE_SHARE_READ | win32file.FILE_SHARE_WRITE | win32file.FILE_SHARE_DELETE,
-            None, win32file.OPEN_EXISTING,
-            win32file.FILE_ATTRIBUTE_NORMAL, None
-        )
-        win32file.SetFileTime(winfile, wintime, None, None)
-        winfile.close()
-    except Exception as e:
-        print(f"Timestamp Error: {e}")
+def change_file_creation_time(path, date_obj, retries=3):
+    """Forces the Windows 'Date Created' timestamp to 1990. Retries if locked."""
+    for attempt in range(retries):
+        try:
+            wintime = pywintypes.Time(date_obj)
+            winfile = win32file.CreateFile(
+                path, win32file.GENERIC_WRITE,
+                win32file.FILE_SHARE_READ | win32file.FILE_SHARE_WRITE | win32file.FILE_SHARE_DELETE,
+                None, win32file.OPEN_EXISTING,
+                win32file.FILE_ATTRIBUTE_NORMAL, None
+            )
+            win32file.SetFileTime(winfile, wintime, wintime, wintime)
+            winfile.close()
+            return True
+        except Exception as e:
+            if attempt < retries - 1:
+                time.sleep(0.3)
+            continue
+    return False
 
 def get_cleaned_path(file_path):
-    """Generates the output filename (e.g., photo_cleaned.jpg)."""
+    """Generates output filename."""
     base, ext = os.path.splitext(file_path)
     return f"{base}_cleaned{ext}"
 
@@ -50,87 +57,144 @@ def scrub_image(file_path, new_path):
         clean_img = Image.new(img.mode, img.size)
         clean_img.putdata(data)
         clean_img.save(new_path)
-        return True
+        img.close()
+        clean_img.close()
+        return True, None
     except Exception as e:
-        return False
+        return False, str(e)
 
 def scrub_pdf(file_path, new_path):
     """Aggressively removes all PDF metadata."""
     try:
         with pikepdf.open(file_path) as pdf:
-            # Nuke XMP metadata stream entirely
             if '/Metadata' in pdf.Root:
                 del pdf.Root['/Metadata']
             
-            # Delete all Info dictionary keys
             if pdf.docinfo is not None:
                 keys_to_delete = list(pdf.docinfo.keys())
                 for key in keys_to_delete:
                     del pdf.docinfo[key]
             
-            # Save first pass
             pdf.save(new_path)
         
-        # Second pass: remove pikepdf's Producer stamp
+        time.sleep(0.1)
         with pikepdf.open(new_path, allow_overwriting_input=True) as pdf:
             if pdf.docinfo is not None:
                 keys_to_delete = list(pdf.docinfo.keys())
                 for key in keys_to_delete:
                     del pdf.docinfo[key]
             
-            # Also nuke any XMP that might have been regenerated
             if '/Metadata' in pdf.Root:
                 del pdf.Root['/Metadata']
             
             pdf.save(new_path)
         
-        return True
+        return True, None
     except Exception as e:
-        print(f"PDF Error: {e}")
-        return False
+        return False, str(e)
 
 def process_file(file_path):
     """Orchestrator: Creates cleaned copy and nukes timestamp."""
+    if os.path.isdir(file_path):
+        return "SKIPPED", None, "Folder"
+    
+    if not os.path.isfile(file_path):
+        return "FAILED", None, "File not found"
+    
     ext = os.path.splitext(file_path)[1].lower()
+    
+    supported = ['.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.webp', '.gif', '.pdf']
+    if ext not in supported:
+        return "SKIPPED", None, f"Unsupported: {ext}"
+    
     new_path = get_cleaned_path(file_path)
-    success = False
-
-    if ext in ['.jpg', '.jpeg', '.png', '.bmp', '.tiff']:
-        success = scrub_image(file_path, new_path)
-    elif ext == '.pdf':
-        success = scrub_pdf(file_path, new_path)
+    
+    # Check if cleaned version already exists
+    if os.path.exists(new_path):
+        answer = messagebox.askyesno(
+            "Already Cleaned",
+            f"'{os.path.basename(new_path)}' already exists.\n\nOverwrite?",
+            icon="question"
+        )
+        if not answer:
+            return "SKIPPED", None, "User cancelled"
+    
+    if ext == '.pdf':
+        success, error = scrub_pdf(file_path, new_path)
+    else:
+        success, error = scrub_image(file_path, new_path)
 
     if success:
+        time.sleep(0.2)
         os.utime(new_path, (TIMESTAMP, TIMESTAMP))
         change_file_creation_time(new_path, TARGET_DATE)
-        return "CLEANED", new_path
+        return "CLEANED", new_path, None
     else:
-        return "FAILED", None
+        return "FAILED", None, error
+
+def flash_status(color, text, revert=True):
+    """Flash the status indicator."""
+    dot_canvas.itemconfig(dot_id, fill=color, outline=color)
+    lbl_status.config(fg=color, text=text)
+    if revert:
+        root.after(2000, lambda: reset_status())
+
+def reset_status():
+    """Reset status to default."""
+    dot_canvas.itemconfig(dot_id, fill=COLOR_ACCENT, outline=COLOR_ACCENT)
+    lbl_status.config(fg=COLOR_ACCENT, text="ACTIVE: Awaiting Files")
 
 def drop(event):
     """Handles the file drop event."""
     files = event.data
     file_list = root.tk.splitlist(files)
+    
+    flash_status("#ffaa00", "PROCESSING...", revert=False)
+    root.update()
 
     log_box.config(state=tk.NORMAL)
     log_box.delete(1.0, tk.END)
 
-    count = 0
+    cleaned_count = 0
+    skipped_count = 0
+    failed_count = 0
+    
     for f in file_list:
-        status, new_file = process_file(f)
+        status, new_file, error = process_file(f)
+        fname = os.path.basename(f)
 
         if status == "CLEANED":
-            count += 1
+            cleaned_count += 1
             cleaned_name = os.path.basename(new_file)
             msg = f"✔ {cleaned_name}\n"
             log_box.insert(tk.END, msg, "success")
+        elif status == "SKIPPED":
+            skipped_count += 1
+            msg = f"⊘ {fname} — {error}\n"
+            log_box.insert(tk.END, msg, "warning")
         else:
-            fname = os.path.basename(f)
-            msg = f"✖ {fname} (Failed)\n"
+            failed_count += 1
+            msg = f"✖ {fname} — {error}\n"
             log_box.insert(tk.END, msg, "fail")
+        
+        root.update_idletasks()
 
-    log_box.insert(tk.END, f"\nProcessed {count} file(s).", "info")
+    summary = f"\nDone: {cleaned_count} cleaned"
+    if skipped_count > 0:
+        summary += f", {skipped_count} skipped"
+    if failed_count > 0:
+        summary += f", {failed_count} failed"
+    log_box.insert(tk.END, summary, "info")
     log_box.config(state=tk.DISABLED)
+    
+    if cleaned_count > 0:
+        flash_status(COLOR_ACCENT, f"DONE: {cleaned_count} file(s) cleaned")
+        winsound.MessageBeep(winsound.MB_OK)
+    elif failed_count > 0:
+        flash_status("#ff4444", "FAILED")
+        winsound.MessageBeep(winsound.MB_ICONHAND)
+    else:
+        flash_status("#ffaa00", "NOTHING TO DO")
 
 # --- GUI SETUP ---
 root = TkinterDnD.Tk()
@@ -152,7 +216,6 @@ lbl_title = tk.Label(
 )
 lbl_title.pack()
 
-# Subtitle with gold XORD
 sub_frame = tk.Frame(header_frame, bg=COLOR_BG)
 sub_frame.pack()
 
@@ -178,14 +241,12 @@ lbl_sub2.pack(side=tk.LEFT)
 status_frame = tk.Frame(root, bg=COLOR_BG, pady=5)
 status_frame.pack(fill=tk.X)
 
-# Inner frame to center the content
 status_inner = tk.Frame(status_frame, bg=COLOR_BG)
 status_inner.pack()
 
-# Green dot (bigger)
 dot_canvas = tk.Canvas(status_inner, width=16, height=16, bg=COLOR_BG, highlightthickness=0)
 dot_canvas.pack(side=tk.LEFT, padx=(0, 8))
-dot_canvas.create_oval(2, 2, 14, 14, fill=COLOR_ACCENT, outline=COLOR_ACCENT)
+dot_id = dot_canvas.create_oval(2, 2, 14, 14, fill=COLOR_ACCENT, outline=COLOR_ACCENT)
 
 lbl_status = tk.Label(
     status_inner,
@@ -211,7 +272,7 @@ lbl_drop.place(relx=0.5, rely=0.35, anchor="center")
 
 lbl_formats = tk.Label(
     drop_frame,
-    text="PDF / JPG / PNG / BMP / TIFF",
+    text="PDF / JPG / PNG / BMP / TIFF / WEBP / GIF",
     bg=COLOR_PANEL,
     fg=COLOR_SUBTEXT,
     font=("Segoe UI", 9)
@@ -243,17 +304,15 @@ log_box = tk.Text(
 )
 log_box.pack(fill=tk.X)
 
-# Insert initial message
 log_box.config(state=tk.NORMAL)
 log_box.insert(tk.END, "Ready. Waiting for files...", "info")
 log_box.config(state=tk.DISABLED)
 
-# Tags for color coding
 log_box.tag_config("success", foreground=COLOR_ACCENT)
+log_box.tag_config("warning", foreground="#ffaa00")
 log_box.tag_config("fail", foreground="#ff4444")
 log_box.tag_config("info", foreground=COLOR_SUBTEXT)
 
-# Enable DND on the whole window
 root.drop_target_register(DND_FILES)
 root.dnd_bind('<<Drop>>', drop)
 
