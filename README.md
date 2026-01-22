@@ -2,9 +2,10 @@
 
 XORD DEFENSE | Metadata Sanitizer for Windows 10/11
 
-> "Your files are talking behind your back. MetaPurge shuts them up."
+Metadata Sanitizer for Windows 10/11 — strips EXIF, PDF metadata, and file timestamps from your documents.
+"Your files are talking behind your back. MetaPurge shuts them up."
 
-🔽 **[DOWNLOAD (EXE)]([../../releases/latest/download/MetaPurge.exe](https://github.com/XORD-AI/MetaPurge/releases/tag/XORD_Meta_Laundry))**
+🔽 **[DOWNLOAD (ZIP)](https://github.com/XORD-AI/MetaPurge/releases/download/XORD_Meta_Laundry/MetaPurge.zip)**
 
 ---
 
