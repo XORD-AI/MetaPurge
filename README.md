@@ -4,7 +4,7 @@ XORD DEFENSE | Metadata Sanitizer for Windows 10/11
 
 > "Your files are talking behind your back. MetaPurge shuts them up."
 
-🔽 **[DOWNLOAD (EXE)](../../releases/latest/download/MetaPurge.exe)**
+🔽 **[DOWNLOAD (EXE)]([../../releases/latest/download/MetaPurge.exe](https://github.com/XORD-AI/MetaPurge/releases/tag/XORD_Meta_Laundry))**
 
 ---
 
